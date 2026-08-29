@@ -1,0 +1,14 @@
+{
+  "mae": 5.442,
+  "r2_score": 0.955,
+  "features": [
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "is_exam_period",
+    "is_semester_break"
+  ],
+  "target": "occupancy_percent",
+  "n_train": 2688,
+  "n_test": 672
+}
