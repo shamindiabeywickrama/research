@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react'
 import { getNetworkStatus, connectNetworkWebSocket } from '../api'
 import { formatRelativeTime } from '../utils/helpers'
 
+import { isWifiMode } from '../utils/weather'
+
 export default function WiFiStatus({ dataMode }) {
   const [networkStatus, setNetworkStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [wsConnected, setWsConnected] = useState(false)
 
   useEffect(() => {
-    if (dataMode !== 'wifi') {
+    if (!isWifiMode(dataMode)) {
       setLoading(false)
       return
     }
@@ -49,7 +51,7 @@ export default function WiFiStatus({ dataMode }) {
     }
   }
 
-  if (dataMode !== 'wifi') {
+  if (!isWifiMode(dataMode)) {
     return null
   }
 

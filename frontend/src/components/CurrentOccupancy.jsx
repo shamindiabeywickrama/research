@@ -1,5 +1,6 @@
 import { formatRelativeTime, statusLabel, statusColor } from '../utils/helpers'
 import LoadingState from './LoadingState'
+import { isWifiMode } from '../utils/weather'
 
 function OccupancyRing({ percentage, status }) {
   const radius = 72
@@ -51,8 +52,8 @@ export default function CurrentOccupancy({ data, loading, dataMode }) {
 
   if (!data) return null
 
-  const isDemo = dataMode === 'demo'
-  const isWifi = dataMode === 'wifi'
+  const isDemo = dataMode === 'demo' || dataMode === 'weather'
+  const isWifi = isWifiMode(dataMode)
 
   return (
     <section className="section">

@@ -6,6 +6,7 @@ import {
   getRecommendations,
   getMetrics,
   getDataSources,
+  getCurrentWeather,
 } from '../api'
 import Header from '../components/Header'
 import CurrentOccupancy from '../components/CurrentOccupancy'
@@ -17,8 +18,12 @@ import ModelPerformance from '../components/ModelPerformance'
 import DataSources from '../components/DataSources'
 import WiFiStatus from '../components/WiFiStatus'
 import NetworkActivity from '../components/NetworkActivity'
+import WeatherCard from '../components/WeatherCard'
+import WeatherImpact from '../components/WeatherImpact'
+import WeatherTimeline from '../components/WeatherTimeline'
 import Footer from '../components/Footer'
 import ErrorState from '../components/ErrorState'
+import { isWifiMode } from '../utils/weather'
 
 export default function Dashboard() {
   const [health, setHealth] = useState(null)
@@ -27,6 +32,7 @@ export default function Dashboard() {
   const [recommendations, setRecommendations] = useState(null)
   const [metricsData, setMetricsData] = useState(null)
   const [dataSources, setDataSources] = useState(null)
+  const [weather, setWeather] = useState(null)
   const [dataMode, setDataMode] = useState('demo')
   const [loading, setLoading] = useState(true)
   const [forecastError, setForecastError] = useState(null)
@@ -51,6 +57,10 @@ export default function Dashboard() {
           getMetrics().catch(() => null),
           getDataSources().catch(() => null),
         ])
+
+      getCurrentWeather()
+        .then((weatherRes) => setWeather(weatherRes))
+        .catch(() => setWeather({ available: false }))
 
       if (!healthRes && !currentRes && !forecastRes) {
         setServiceError('Library prediction service is currently unavailable.')
@@ -79,7 +89,15 @@ export default function Dashboard() {
   useEffect(() => {
     loadData()
     const interval = setInterval(loadData, 5 * 60 * 1000)
-    return () => clearInterval(interval)
+    const weatherInterval = setInterval(() => {
+      getCurrentWeather()
+        .then((weatherRes) => setWeather(weatherRes))
+        .catch(() => setWeather({ available: false }))
+    }, 15 * 60 * 1000)
+    return () => {
+      clearInterval(interval)
+      clearInterval(weatherInterval)
+    }
   }, [loadData])
 
   const capacity = current?.capacity || forecastData?.forecast?.[0]?.capacity || 200
@@ -122,7 +140,7 @@ export default function Dashboard() {
           />
         </div>
 
-        {dataMode === 'wifi' && (
+        {isWifiMode(dataMode) && (
           <>
             <div className="dashboard-grid__wifi">
               <WiFiStatus dataMode={dataMode} />
@@ -133,6 +151,13 @@ export default function Dashboard() {
           </>
         )}
 
+        <div className="dashboard-grid__weather">
+          <WeatherCard weather={weather} loading={loading && !weather} />
+        </div>
+        <div className="dashboard-grid__weather-impact">
+          <WeatherImpact weather={weather} />
+        </div>
+
         <div className="dashboard-grid__chart">
           <ForecastChart
             forecast={forecastData?.forecast}
@@ -140,13 +165,20 @@ export default function Dashboard() {
             loading={loading && !forecastData && !forecastError}
             error={forecastError}
             onRetry={loadData}
+            weatherAdjusted={forecastData?.weather_adjustment_enabled}
+            adjustmentNote={forecastData?.weather_adjustment_note}
           />
+        </div>
+
+        <div className="dashboard-grid__weather-timeline">
+          <WeatherTimeline forecast={forecastData?.forecast} />
         </div>
 
         <div className="dashboard-grid__recs">
           <RecommendationCard
             recommendations={recommendations}
             loading={loading && !recommendations}
+            weatherAware={forecastData?.weather_adjustment_enabled}
           />
         </div>
 

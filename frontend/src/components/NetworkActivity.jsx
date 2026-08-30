@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { getNetworkEvents } from '../api'
 import { formatRelativeTime } from '../utils/helpers'
 
+import { isWifiMode } from '../utils/weather'
+
 export default function NetworkActivity({ dataMode }) {
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (dataMode !== 'wifi') {
+    if (!isWifiMode(dataMode)) {
       setLoading(false)
       return
     }
@@ -29,7 +31,7 @@ export default function NetworkActivity({ dataMode }) {
     }
   }
 
-  if (dataMode !== 'wifi') {
+  if (!isWifiMode(dataMode)) {
     return null
   }
 

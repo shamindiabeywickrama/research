@@ -27,6 +27,17 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 from wifi_monitor import create_wifi_monitor
+from weather_service import create_weather_service
+from weather_impact import (
+    apply_adjustment,
+    describe_window_weather,
+    factor_for_category,
+    impact_label,
+    impact_reason,
+    load_impact_config,
+    model_has_weather_features,
+    should_apply_layer,
+)
 
 load_dotenv()
 
@@ -36,6 +47,11 @@ load_dotenv()
 wifi_monitor = create_wifi_monitor()
 wifi_websocket_clients: List[WebSocket] = []
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+# ---------------------------------------------------------------------------
+# Weather Service Setup
+# ---------------------------------------------------------------------------
+weather_service = create_weather_service()
 
 
 def wifi_websocket_callback(status: dict):
@@ -78,6 +94,17 @@ async def lifespan(app: FastAPI):
         print(f"Baseline occupancy: {wifi_monitor.baseline}")
         print(f"Status: ACTIVE")
         print("="*50 + "\n")
+    if weather_service:
+        status = weather_service.status_summary()
+        print("\n" + "="*50)
+        print("Weather Service")
+        print("="*50)
+        print(f"Provider: {weather_service.display_name}")
+        print(f"Latitude: {weather_service.latitude}")
+        print(f"Longitude: {weather_service.longitude}")
+        print(f"Update interval: {weather_service.update_interval} seconds")
+        print(f"Available: {status['available']}")
+        print("="*50 + "\n")
     yield
     # Shutdown
     if wifi_monitor:
@@ -106,6 +133,7 @@ app.add_middleware(
 # Configuration
 # ---------------------------------------------------------------------------
 DATA_MODE = os.getenv("DATA_MODE", "demo").lower()
+WIFI_DATA_MODES = {"wifi", "wifi_weather"}
 CAPACITY = int(os.getenv("LIBRARY_CAPACITY", "200"))
 OPEN_HOUR = int(os.getenv("LIBRARY_OPEN_HOUR", "8"))
 CLOSE_HOUR = int(os.getenv("LIBRARY_CLOSE_HOUR", "19"))
@@ -116,6 +144,7 @@ METRICS_PATH = os.path.join(os.path.dirname(__file__), "metrics.json")
 bundle = joblib.load(MODEL_PATH)
 MODEL = bundle["model"]
 FEATURES = bundle["features"]
+MODEL_USES_WEATHER = model_has_weather_features(FEATURES)
 
 with open(METRICS_PATH) as f:
     METRICS = json.load(f)
@@ -192,6 +221,112 @@ def _is_library_open(hour: int) -> bool:
     return OPEN_HOUR <= hour <= CLOSE_HOUR
 
 
+def _wifi_live_occupancy_enabled() -> bool:
+    return DATA_MODE in WIFI_DATA_MODES and wifi_monitor is not None
+
+
+def _weather_payload_compact(hourly_item: Optional[dict]) -> Optional[dict]:
+    if not hourly_item:
+        return None
+    return {
+        "temperature": hourly_item.get("temperature"),
+        "rain_probability": hourly_item.get("precipitation_probability"),
+        "precipitation_probability": hourly_item.get("precipitation_probability"),
+        "precipitation_mm": hourly_item.get("precipitation_mm"),
+        "rain": hourly_item.get("rain"),
+        "condition": hourly_item.get("condition"),
+        "category": hourly_item.get("category"),
+        "wind_speed": hourly_item.get("wind_speed"),
+    }
+
+
+def _apply_weather_to_forecast(forecast: List[dict]) -> List[dict]:
+    """Attach weather and optional prototype adjustment. Never double-count weather."""
+    weather_available = bool(weather_service and weather_service.get_hourly())
+    apply_layer, source = should_apply_layer(FEATURES, weather_available)
+    impact_cfg = load_impact_config()
+
+    for slot in forecast:
+        base = int(slot["predicted_occupancy"])
+        slot["base_prediction"] = base
+        slot["weather"] = None
+        slot["weather_adjustment"] = 0.0
+        slot["weather_adjusted_prediction"] = base
+        slot["adjustment_source"] = source
+
+        if not weather_service:
+            continue
+
+        try:
+            slot_dt = datetime.fromisoformat(slot["datetime"])
+            matched = weather_service.match_hourly(slot_dt)
+        except Exception:
+            matched = None
+
+        weather = _weather_payload_compact(matched)
+        slot["weather"] = weather
+
+        if not apply_layer or not weather or not slot.get("is_open"):
+            continue
+
+        factor = factor_for_category(weather.get("category"), impact_cfg)
+        adjusted = apply_adjustment(base, factor, CAPACITY)
+        percentage = round((adjusted / CAPACITY) * 100, 1) if CAPACITY else 0.0
+        slot["weather_adjustment"] = factor
+        slot["weather_adjusted_prediction"] = adjusted
+        slot["predicted_occupancy"] = adjusted
+        slot["percentage"] = percentage
+        slot["status"] = _occupancy_status(percentage, True)
+
+    return forecast
+
+
+def _weather_insight_from_current() -> Optional[dict]:
+    if not weather_service:
+        return None
+    current = weather_service.get_current()
+    if not current.get("available"):
+        return {
+            "available": False,
+            "message": "Weather data temporarily unavailable.",
+        }
+
+    apply_layer, source = should_apply_layer(FEATURES, True)
+    factor = 0.0
+    if apply_layer:
+        factor = factor_for_category(current.get("category"))
+
+    return {
+        "available": True,
+        "condition": current.get("condition"),
+        "temperature": current.get("temperature"),
+        "precipitation_probability": current.get("precipitation_probability"),
+        "impact_label": impact_label(factor, current.get("category")),
+        "impact_factor": factor,
+        "reason": impact_reason(factor, current.get("condition")),
+        "adjustment_source": source,
+        "prototype": source == "prototype_weather_adjustment",
+    }
+
+
+def _log_weather_to_supabase(slot: dict):
+    if not supabase:
+        return
+    weather = slot.get("weather") or {}
+    try:
+        supabase.table("weather_prediction_logs").insert({
+            "timestamp": slot.get("datetime"),
+            "temperature": weather.get("temperature"),
+            "precipitation": weather.get("precipitation_mm"),
+            "rain_probability": weather.get("rain_probability"),
+            "weather_condition": weather.get("condition"),
+            "base_prediction": slot.get("base_prediction"),
+            "weather_adjusted_prediction": slot.get("weather_adjusted_prediction"),
+        }).execute()
+    except Exception as e:
+        print(f"[warn] Weather Supabase logging failed: {e}")
+
+
 def _predict_single(target_date: date, hour: int) -> dict:
     if not _is_library_open(hour):
         return {
@@ -250,7 +385,7 @@ def _build_24h_forecast(from_dt: Optional[datetime] = None) -> List[dict]:
             "is_open": pred["is_open"],
         })
 
-    return forecast
+    return _apply_weather_to_forecast(forecast)
 
 
 def _find_best_windows(forecast: List[dict], window_hours: int = 2, count: int = 2) -> List[dict]:
@@ -280,6 +415,7 @@ def _find_best_windows(forecast: List[dict], window_hours: int = 2, count: int =
         if end_hour == 24:
             end_hour = 0
 
+        weather_condition = describe_window_weather(chunk)
         windows.append({
             "start_time": _format_time_12h(start_hour),
             "end_time": _format_time_12h(end_hour),
@@ -290,6 +426,7 @@ def _find_best_windows(forecast: List[dict], window_hours: int = 2, count: int =
             "estimated_occupancy": int(round(avg_occ)),
             "crowd_level": _occupancy_status((avg_occ / CAPACITY) * 100),
             "average_percentage": round((avg_occ / CAPACITY) * 100, 1),
+            "weather": weather_condition,
         })
 
     windows.sort(key=lambda w: w["estimated_occupancy"])
@@ -476,6 +613,8 @@ def api_health():
         "data_mode": DATA_MODE,
         "model_loaded": MODEL is not None,
         "supabase_connected": supabase is not None,
+        "weather_enabled": weather_service is not None,
+        "weather_available": bool(weather_service and weather_service.status_summary().get("available")),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -486,8 +625,8 @@ def api_current_occupancy():
     hour = now.hour
     target_date = now.date()
 
-    # Use Wi-Fi simulation mode if enabled and DATA_MODE is wifi
-    if DATA_MODE == "wifi" and wifi_monitor:
+    # Use Wi-Fi simulation when DATA_MODE is wifi or wifi_weather
+    if _wifi_live_occupancy_enabled():
         wifi_status = wifi_monitor.get_status()
         occupied = wifi_status["occupancy_count"]
         percentage = (occupied / CAPACITY) * 100 if CAPACITY > 0 else 0
@@ -548,11 +687,33 @@ def api_current_occupancy():
 @app.get("/api/library/forecast")
 def api_forecast():
     forecast = _build_24h_forecast()
+    apply_layer, source = should_apply_layer(
+        FEATURES,
+        bool(weather_service and weather_service.get_hourly()),
+    )
+    if supabase and apply_layer:
+        current_hour = forecast[0] if forecast else None
+        if current_hour:
+            _log_weather_to_supabase(current_hour)
     return {
         "forecast": forecast,
         "data_mode": DATA_MODE,
         "generated_at": datetime.now().isoformat(),
         "insights": _compute_quick_insights(forecast),
+        "weather_insight": _weather_insight_from_current(),
+        "model_uses_weather_features": MODEL_USES_WEATHER,
+        "weather_adjustment_source": source,
+        "weather_adjustment_enabled": apply_layer,
+        "weather_adjustment_note": (
+            "Weather-adjusted estimate using prototype weather impact adjustment. "
+            "The trained model does not include weather features."
+            if apply_layer
+            else (
+                "Weather is already represented in the trained model; no separate adjustment is applied."
+                if source == "model_weather_features"
+                else "Weather adjustment is not applied."
+            )
+        ),
     }
 
 
@@ -560,10 +721,16 @@ def api_forecast():
 def api_recommendations():
     forecast = _build_24h_forecast()
     windows = _find_best_windows(forecast, window_hours=2, count=2)
+    apply_layer, source = should_apply_layer(
+        FEATURES,
+        bool(weather_service and weather_service.get_hourly()),
+    )
     return {
         "recommendations": windows,
         "data_mode": DATA_MODE,
         "generated_at": datetime.now().isoformat(),
+        "uses_weather_adjusted_forecast": apply_layer,
+        "weather_adjustment_source": source,
     }
 
 
@@ -591,9 +758,22 @@ def api_metrics():
 
 @app.get("/api/library/data-sources")
 def api_data_sources():
-    wifi_status = "Active" if (DATA_MODE == "wifi" and wifi_monitor) else "Planned"
-    wifi_desc = "Local network device simulation" if DATA_MODE == "wifi" else "Live device counts from campus Wi-Fi"
-    
+    wifi_live = _wifi_live_occupancy_enabled()
+    wifi_status = "Active" if wifi_live else "Planned"
+    wifi_desc = (
+        "Local network device simulation"
+        if wifi_live
+        else "Live device counts from campus Wi-Fi"
+    )
+
+    if weather_service:
+        wx = weather_service.status_summary()
+        weather_status = "Connected" if wx.get("available") else "Unavailable"
+        weather_desc = f"Live weather powered by {weather_service.display_name}"
+    else:
+        weather_status = "Planned"
+        weather_desc = "Weather API integration is not enabled"
+
     return {
         "sources": [
             {
@@ -616,9 +796,9 @@ def api_data_sources():
             },
             {
                 "id": "weather",
-                "name": "Weather Data",
-                "status": "Planned",
-                "description": "Weather API integration planned for future work",
+                "name": "Live Weather",
+                "status": weather_status,
+                "description": weather_desc,
             },
             {
                 "id": "historical",
@@ -629,6 +809,33 @@ def api_data_sources():
         ],
         "data_mode": DATA_MODE,
     }
+
+
+@app.get("/api/weather/current")
+def api_weather_current():
+    if not weather_service:
+        return {
+            "available": False,
+            "provider": None,
+            "message": "Weather data temporarily unavailable.",
+        }
+    payload = weather_service.get_current()
+    insight = _weather_insight_from_current()
+    payload["impact"] = insight
+    payload["model_uses_weather_features"] = MODEL_USES_WEATHER
+    return payload
+
+
+@app.get("/api/weather/forecast")
+def api_weather_forecast():
+    if not weather_service:
+        return {
+            "available": False,
+            "provider": None,
+            "forecast": [],
+            "message": "Weather data temporarily unavailable.",
+        }
+    return weather_service.get_forecast_payload()
 
 
 @app.get("/api/network/status")

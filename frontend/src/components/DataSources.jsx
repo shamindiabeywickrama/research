@@ -3,6 +3,7 @@ const STATUS_STYLES = {
   Active: 'source-status--connected',
   Demo: 'source-status--demo',
   Planned: 'source-status--planned',
+  Unavailable: 'source-status--planned',
 }
 
 const SOURCE_ICONS = {

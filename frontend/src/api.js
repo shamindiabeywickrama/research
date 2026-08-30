@@ -38,6 +38,16 @@ export async function getDataSources() {
   return handle(res)
 }
 
+export async function getCurrentWeather() {
+  const res = await fetch(`${API_BASE}/api/weather/current`)
+  return handle(res)
+}
+
+export async function getWeatherForecast() {
+  const res = await fetch(`${API_BASE}/api/weather/forecast`)
+  return handle(res)
+}
+
 export async function getNetworkStatus() {
   const res = await fetch(`${API_BASE}/api/network/status`)
   return handle(res)

@@ -1,7 +1,7 @@
 import LoadingState from './LoadingState'
 import { statusLabel, statusColor } from '../utils/helpers'
 
-export default function RecommendationCard({ recommendations, loading }) {
+export default function RecommendationCard({ recommendations, loading, weatherAware }) {
   if (loading) {
     return (
       <section className="section">
@@ -17,7 +17,11 @@ export default function RecommendationCard({ recommendations, loading }) {
           <div className="section-header">
             <div>
               <h2 className="section-title">Smart Study Recommendations</h2>
-              <p className="section-subtitle">Best times to visit based on predicted crowd levels</p>
+              <p className="section-subtitle">
+                {weatherAware
+                  ? 'Best times using the weather-adjusted occupancy estimate'
+                  : 'Best times to visit based on predicted crowd levels'}
+              </p>
             </div>
           </div>
           <div className="empty-state">No recommendations available for the current forecast period.</div>
@@ -32,7 +36,11 @@ export default function RecommendationCard({ recommendations, loading }) {
         <div className="section-header">
           <div>
             <h2 className="section-title">Smart Study Recommendations</h2>
-            <p className="section-subtitle">Best times to visit based on predicted crowd levels</p>
+            <p className="section-subtitle">
+                {weatherAware
+                  ? 'Best times using the weather-adjusted occupancy estimate'
+                  : 'Best times to visit based on predicted crowd levels'}
+              </p>
           </div>
         </div>
 
@@ -59,6 +67,12 @@ export default function RecommendationCard({ recommendations, loading }) {
                     {statusLabel(rec.crowd_level)}
                   </span>
                 </div>
+                {rec.weather && (
+                  <div>
+                    <span className="recommendation-card__label">Weather</span>
+                    <span className="recommendation-card__value">{rec.weather}</span>
+                  </div>
+                )}
               </div>
             </div>
           ))}
