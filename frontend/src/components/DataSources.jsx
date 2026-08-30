@@ -1,5 +1,6 @@
 const STATUS_STYLES = {
   Connected: 'source-status--connected',
+  Active: 'source-status--connected',
   Demo: 'source-status--demo',
   Planned: 'source-status--planned',
 }

@@ -13,23 +13,81 @@ Run:
 
 import os
 import json
+import asyncio
 from datetime import datetime, date, timedelta
 from typing import Optional, List
+from contextlib import asynccontextmanager
 
 import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
+from wifi_monitor import create_wifi_monitor
+
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Wi-Fi Monitor Setup
+# ---------------------------------------------------------------------------
+wifi_monitor = create_wifi_monitor()
+wifi_websocket_clients: List[WebSocket] = []
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def wifi_websocket_callback(status: dict):
+    """Broadcast Wi-Fi updates from the monitor thread onto the FastAPI event loop."""
+    loop = _main_loop
+    if loop is None or not loop.is_running():
+        return
+    asyncio.run_coroutine_threadsafe(_broadcast_wifi_update(status), loop)
+
+
+async def _broadcast_wifi_update(status: dict):
+    """Broadcast Wi-Fi status update to all connected clients."""
+    disconnected = []
+    for client in list(wifi_websocket_clients):
+        try:
+            await client.send_json(status)
+        except Exception:
+            disconnected.append(client)
+    for client in disconnected:
+        if client in wifi_websocket_clients:
+            wifi_websocket_clients.remove(client)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager - startup and shutdown events."""
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
+    if wifi_monitor:
+        wifi_monitor.set_websocket_callback(wifi_websocket_callback)
+        wifi_monitor.start()
+        print("\n" + "="*50)
+        print("Wi-Fi Monitor")
+        print("="*50)
+        print(f"Interface IP: {wifi_monitor.interface_ip}")
+        print(f"Gateway: {wifi_monitor.gateway}")
+        print(f"Subnet: {wifi_monitor.subnet}")
+        print(f"Scan interval: {wifi_monitor.scan_interval} seconds")
+        print(f"Excluded devices: {len(wifi_monitor.exclude_ips)}")
+        print(f"Baseline occupancy: {wifi_monitor.baseline}")
+        print(f"Status: ACTIVE")
+        print("="*50 + "\n")
+    yield
+    # Shutdown
+    if wifi_monitor:
+        wifi_monitor.stop()
+
 
 # ---------------------------------------------------------------------------
 # App setup
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Library Crowd Prediction API", version="2.0.0")
+app = FastAPI(title="Library Crowd Prediction API", version="2.0.0", lifespan=lifespan)
 
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS",
@@ -428,6 +486,29 @@ def api_current_occupancy():
     hour = now.hour
     target_date = now.date()
 
+    # Use Wi-Fi simulation mode if enabled and DATA_MODE is wifi
+    if DATA_MODE == "wifi" and wifi_monitor:
+        wifi_status = wifi_monitor.get_status()
+        occupied = wifi_status["occupancy_count"]
+        percentage = (occupied / CAPACITY) * 100 if CAPACITY > 0 else 0
+        status = _occupancy_status(percentage, _is_library_open(hour))
+
+        return {
+            "capacity": CAPACITY,
+            "occupied": occupied,
+            "occupancy_percentage": round(percentage, 1),
+            "status": status,
+            "available_seats": max(0, CAPACITY - occupied),
+            "updated_at": now.isoformat(),
+            "data_mode": DATA_MODE,
+            "is_open": _is_library_open(hour),
+            "wifi_detected_devices": wifi_status["detected_devices"],
+            "wifi_baseline": wifi_status["baseline"],
+            "is_exam_period": bool(_in_range(target_date, EXAM_DATE_RANGES)),
+            "is_semester_break": bool(_in_range(target_date, BREAK_DATE_RANGES)),
+            "is_weekend": bool(target_date.weekday() >= 5),
+        }
+
     if not _is_library_open(hour):
         nearest_hour = OPEN_HOUR if hour < OPEN_HOUR else CLOSE_HOUR
         pred = _predict_single(target_date, nearest_hour)
@@ -510,13 +591,16 @@ def api_metrics():
 
 @app.get("/api/library/data-sources")
 def api_data_sources():
+    wifi_status = "Active" if (DATA_MODE == "wifi" and wifi_monitor) else "Planned"
+    wifi_desc = "Local network device simulation" if DATA_MODE == "wifi" else "Live device counts from campus Wi-Fi"
+    
     return {
         "sources": [
             {
                 "id": "wifi",
                 "name": "Wi-Fi Device Data",
-                "status": "Planned",
-                "description": "Live device counts from campus Wi-Fi (not yet integrated)",
+                "status": wifi_status,
+                "description": wifi_desc,
             },
             {
                 "id": "calendar",
@@ -545,3 +629,46 @@ def api_data_sources():
         ],
         "data_mode": DATA_MODE,
     }
+
+
+@app.get("/api/network/status")
+def api_network_status():
+    """Get current Wi-Fi network monitoring status."""
+    if not wifi_monitor:
+        return {
+            "enabled": False,
+            "mode": "none",
+            "message": "Wi-Fi simulation is not enabled",
+        }
+    
+    return wifi_monitor.get_status()
+
+
+@app.get("/api/network/events")
+def api_network_events():
+    """Get recent device connection/disconnection events."""
+    if not wifi_monitor:
+        return {"events": []}
+    
+    return {"events": wifi_monitor.get_events()}
+
+
+@app.websocket("/ws/network")
+async def websocket_network(websocket: WebSocket):
+    """WebSocket endpoint for real-time network status updates."""
+    await websocket.accept()
+    wifi_websocket_clients.append(websocket)
+    
+    try:
+        # Send initial status
+        if wifi_monitor:
+            await websocket.send_json(wifi_monitor.get_status())
+        
+        # Keep connection alive
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        wifi_websocket_clients.remove(websocket)
+    except Exception:
+        if websocket in wifi_websocket_clients:
+            wifi_websocket_clients.remove(websocket)

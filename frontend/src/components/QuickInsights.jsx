@@ -64,7 +64,7 @@ export default function QuickInsights({ insights, loading, currentData }) {
   }
 
   const data = {
-    ...insights,
+    ...(insights || {}),
     available_seats: currentData?.available_seats ?? insights?.available_seats ?? 0,
   }
 
@@ -77,7 +77,11 @@ export default function QuickInsights({ insights, loading, currentData }) {
             <div className="insight-card__content">
               <span className="insight-card__label">{label}</span>
               <span className="insight-card__value">
-                {isTime ? data[key] : `${data[key] ?? '—'}${suffix}`}
+                {isTime
+                  ? (data[key] ?? '—')
+                  : data[key] == null
+                    ? '—'
+                    : `${data[key]}${suffix}`}
               </span>
             </div>
           </div>

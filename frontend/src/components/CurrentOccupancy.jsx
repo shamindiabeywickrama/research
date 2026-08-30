@@ -4,7 +4,8 @@ import LoadingState from './LoadingState'
 function OccupancyRing({ percentage, status }) {
   const radius = 72
   const circumference = 2 * Math.PI * radius
-  const offset = circumference - (percentage / 100) * circumference
+  const safePercent = Number.isFinite(percentage) ? Math.min(100, Math.max(0, percentage)) : 0
+  const offset = circumference - (safePercent / 100) * circumference
   const color = statusColor(status)
 
   return (
@@ -33,7 +34,7 @@ function OccupancyRing({ percentage, status }) {
         />
       </svg>
       <div className="occupancy-ring__center">
-        <span className="occupancy-ring__percent">{percentage.toFixed(1)}%</span>
+        <span className="occupancy-ring__percent">{safePercent.toFixed(1)}%</span>
       </div>
     </div>
   )
@@ -51,11 +52,15 @@ export default function CurrentOccupancy({ data, loading, dataMode }) {
   if (!data) return null
 
   const isDemo = dataMode === 'demo'
+  const isWifi = dataMode === 'wifi'
 
   return (
     <section className="section">
       {isDemo && (
         <div className="demo-badge">Demo Prediction Data</div>
+      )}
+      {isWifi && (
+        <div className="wifi-badge">Wi-Fi Simulation Mode</div>
       )}
       <div className="occupancy-card">
         <div className="occupancy-card__header">
@@ -89,6 +94,12 @@ export default function CurrentOccupancy({ data, loading, dataMode }) {
                 <span className="meta-item__label">Last Updated</span>
                 <span className="meta-item__value">{formatRelativeTime(data.updated_at)}</span>
               </div>
+              {isWifi && data.wifi_detected_devices !== undefined && (
+                <div className="meta-item">
+                  <span className="meta-item__label">Wi-Fi Devices</span>
+                  <span className="meta-item__value">{data.wifi_detected_devices}</span>
+                </div>
+              )}
             </div>
             {data.message && (
               <p className="occupancy-card__note">{data.message}</p>

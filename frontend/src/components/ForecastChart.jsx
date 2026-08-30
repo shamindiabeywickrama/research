@@ -86,7 +86,10 @@ export default function ForecastChart({ forecast, capacity, loading, error, onRe
             if (context.datasetIndex === 1) {
               return `Capacity: ${context.parsed.y}`
             }
-            const item = forecast[context.dataIndex]
+            const item = forecast?.[context.dataIndex]
+            if (!item) {
+              return `Predicted: ${context.parsed.y}`
+            }
             return [
               `Predicted: ${item.predicted_occupancy} students`,
               `Occupancy: ${item.percentage}%`,

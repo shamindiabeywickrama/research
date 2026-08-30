@@ -55,7 +55,7 @@ export default function CrowdTimeline({ forecast }) {
             <div key={slot.datetime} className="timeline-point">
               <span className="timeline-point__time">{formatTime12h(slot.time)}</span>
               <span
-                className={`timeline-point__dot timeline-point__dot--${slot.status.toLowerCase()}`}
+                className={`timeline-point__dot timeline-point__dot--${(slot.status || 'closed').toLowerCase()}`}
               />
               <span
                 className="timeline-point__status"

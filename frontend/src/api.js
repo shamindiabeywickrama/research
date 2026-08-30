@@ -38,4 +38,43 @@ export async function getDataSources() {
   return handle(res)
 }
 
+export async function getNetworkStatus() {
+  const res = await fetch(`${API_BASE}/api/network/status`)
+  return handle(res)
+}
+
+export async function getNetworkEvents() {
+  const res = await fetch(`${API_BASE}/api/network/events`)
+  return handle(res)
+}
+
+export function connectNetworkWebSocket(onMessage, onError) {
+  const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws/network'
+  const ws = new WebSocket(wsUrl)
+
+  ws.onopen = () => {
+    console.log('WebSocket connected')
+  }
+
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      onMessage(data)
+    } catch (e) {
+      console.error('WebSocket parse error:', e)
+    }
+  }
+
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error)
+    if (onError) onError(error)
+  }
+
+  ws.onclose = () => {
+    console.log('WebSocket disconnected')
+  }
+
+  return ws
+}
+
 export { API_BASE }

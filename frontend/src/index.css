@@ -1,7 +1,7 @@
 :root {
   --color-primary: #094886;
   --color-secondary: #2563EB;
-  --color-bg: #F8FAFC;
+  --color-bg: #F1F5F9;
   --color-card: #FFFFFF;
   --color-text: #0F172A;
   --color-muted: #64748B;
@@ -15,7 +15,7 @@
   --radius-md: 10px;
   --radius-lg: 12px;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --max-width: 1200px;
+  --max-width: 1280px;
 }
 
 *,
@@ -41,7 +41,64 @@ body {
 .dashboard {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: 24px 20px 48px;
+  padding: 20px 20px 48px;
+}
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 20px;
+  align-items: stretch;
+}
+
+.dashboard-grid__occupancy,
+.dashboard-grid__insights,
+.dashboard-grid__wifi,
+.dashboard-grid__activity,
+.dashboard-grid__recs,
+.dashboard-grid__timeline,
+.dashboard-grid__metrics,
+.dashboard-grid__sources {
+  min-width: 0;
+}
+
+.dashboard-grid__chart {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.dashboard-grid .section {
+  height: 100%;
+  margin-bottom: 0;
+}
+
+.dashboard-grid .occupancy-card,
+.dashboard-grid .chart-section,
+.dashboard-grid .recommendations-section,
+.dashboard-grid .timeline-section,
+.dashboard-grid .metrics-section,
+.dashboard-grid .sources-section,
+.dashboard-grid .panel {
+  height: 100%;
+}
+
+.dashboard-grid .insights-grid {
+  grid-template-columns: 1fr 1fr;
+  height: 100%;
+}
+
+.panel {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.panel__muted {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-muted);
 }
 
 /* Header */
@@ -201,6 +258,10 @@ body {
   border-radius: var(--radius-lg);
   padding: 24px;
   box-shadow: var(--shadow-sm);
+}
+
+.occupancy-card__header {
+  margin-bottom: 16px;
 }
 
 .occupancy-card__body {
@@ -751,7 +812,16 @@ body {
 
 /* Responsive */
 @media (max-width: 1024px) {
-  .insights-grid {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid__chart {
+    grid-column: auto;
+  }
+
+  .insights-grid,
+  .dashboard-grid .insights-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -798,7 +868,8 @@ body {
 }
 
 @media (max-width: 480px) {
-  .insights-grid {
+  .insights-grid,
+  .dashboard-grid .insights-grid {
     grid-template-columns: 1fr;
   }
 
@@ -813,4 +884,155 @@ body {
   .section-header {
     flex-direction: column;
   }
+}
+
+/* Wi-Fi Simulation Styles */
+.wifi-simulation-badge {
+  display: inline-block;
+  background: #8b5cf6;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.wifi-badge {
+  display: inline-block;
+  background: #8b5cf6;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.wifi-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  color: #fff;
+}
+
+.wifi-status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.wifi-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wifi-status-item__label {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+.wifi-status-item__value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.wifi-status-item__value--highlight {
+  font-size: 1.5rem;
+  color: var(--color-primary);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.wifi-baseline-note {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  padding: 8px 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-secondary);
+}
+
+/* Network Activity Styles */
+.network-activity-empty {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 20px;
+}
+
+.network-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.network-activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
+}
+
+.network-activity-item:hover {
+  background: #f1f5f9;
+}
+
+.network-activity-item__icon {
+  flex-shrink: 0;
+}
+
+.network-activity-icon {
+  font-size: 1.25rem;
+}
+
+.network-activity-icon--connected {
+  color: #10b981;
+}
+
+.network-activity-icon--disconnected {
+  color: #ef4444;
+}
+
+.network-activity-item__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.network-activity-item__event {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.network-activity-item__detail {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+}
+
+.network-activity-item__time {
+  font-size: 0.8125rem;
+  color: var(--color-muted);
+  white-space: nowrap;
 }

@@ -15,6 +15,8 @@ import RecommendationCard from '../components/RecommendationCard'
 import CrowdTimeline from '../components/CrowdTimeline'
 import ModelPerformance from '../components/ModelPerformance'
 import DataSources from '../components/DataSources'
+import WiFiStatus from '../components/WiFiStatus'
+import NetworkActivity from '../components/NetworkActivity'
 import Footer from '../components/Footer'
 import ErrorState from '../components/ErrorState'
 
@@ -97,46 +99,75 @@ export default function Dashboard() {
           <span className="hero__badge">Machine Learning Powered</span>
           <h2 className="hero__title">Plan Your Study Time Smarter</h2>
           <p className="hero__text">
-            Get real-time library occupancy insights and AI-powered predictions
-            to find the best time to study.
+            Real-time occupancy, 24-hour crowd forecasts, and quieter study windows
+            in one dashboard.
           </p>
         </div>
       </section>
 
-      <CurrentOccupancy
-        data={current}
-        loading={loading && !current}
-        dataMode={dataMode}
-      />
+      <div className="dashboard-grid">
+        <div className="dashboard-grid__occupancy">
+          <CurrentOccupancy
+            data={current}
+            loading={loading && !current}
+            dataMode={dataMode}
+          />
+        </div>
 
-      <QuickInsights
-        insights={forecastData?.insights}
-        loading={loading && !forecastData}
-        currentData={current}
-      />
+        <div className="dashboard-grid__insights">
+          <QuickInsights
+            insights={forecastData?.insights}
+            loading={loading && !forecastData}
+            currentData={current}
+          />
+        </div>
 
-      <ForecastChart
-        forecast={forecastData?.forecast}
-        capacity={capacity}
-        loading={loading && !forecastData && !forecastError}
-        error={forecastError}
-        onRetry={loadData}
-      />
+        {dataMode === 'wifi' && (
+          <>
+            <div className="dashboard-grid__wifi">
+              <WiFiStatus dataMode={dataMode} />
+            </div>
+            <div className="dashboard-grid__activity">
+              <NetworkActivity dataMode={dataMode} />
+            </div>
+          </>
+        )}
 
-      <RecommendationCard
-        recommendations={recommendations}
-        loading={loading && !recommendations}
-      />
+        <div className="dashboard-grid__chart">
+          <ForecastChart
+            forecast={forecastData?.forecast}
+            capacity={capacity}
+            loading={loading && !forecastData && !forecastError}
+            error={forecastError}
+            onRetry={loadData}
+          />
+        </div>
 
-      <CrowdTimeline forecast={forecastData?.forecast} />
+        <div className="dashboard-grid__recs">
+          <RecommendationCard
+            recommendations={recommendations}
+            loading={loading && !recommendations}
+          />
+        </div>
 
-      <ModelPerformance
-        metrics={metricsData?.metrics}
-        note={metricsData?.note}
-        loading={loading && !metricsData}
-      />
+        {forecastData?.forecast?.length ? (
+          <div className="dashboard-grid__timeline">
+            <CrowdTimeline forecast={forecastData.forecast} />
+          </div>
+        ) : null}
 
-      <DataSources sources={dataSources} />
+        <div className="dashboard-grid__metrics">
+          <ModelPerformance
+            metrics={metricsData?.metrics}
+            note={metricsData?.note}
+            loading={loading && !metricsData}
+          />
+        </div>
+
+        <div className="dashboard-grid__sources">
+          <DataSources sources={dataSources} />
+        </div>
+      </div>
 
       <Footer />
     </div>
