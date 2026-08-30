@@ -8,26 +8,34 @@ async function handle(res) {
   return res.json()
 }
 
-export async function getRoot() {
-  const res = await fetch(`${API_BASE}/`)
+export async function getHealth() {
+  const res = await fetch(`${API_BASE}/api/health`)
   return handle(res)
 }
 
-export async function predictHour(date, hour) {
-  const res = await fetch(`${API_BASE}/predict`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ date, hour }),
-  })
+export async function getCurrentOccupancy() {
+  const res = await fetch(`${API_BASE}/api/library/current`)
   return handle(res)
 }
 
-export async function predictDay(date) {
-  const res = await fetch(`${API_BASE}/predict/day?date_str=${date}`)
+export async function getForecast() {
+  const res = await fetch(`${API_BASE}/api/library/forecast`)
   return handle(res)
 }
 
-export async function getHistory(limit = 20) {
-  const res = await fetch(`${API_BASE}/history?limit=${limit}`)
+export async function getRecommendations() {
+  const res = await fetch(`${API_BASE}/api/library/recommendations`)
   return handle(res)
 }
+
+export async function getMetrics() {
+  const res = await fetch(`${API_BASE}/api/library/metrics`)
+  return handle(res)
+}
+
+export async function getDataSources() {
+  const res = await fetch(`${API_BASE}/api/library/data-sources`)
+  return handle(res)
+}
+
+export { API_BASE }
