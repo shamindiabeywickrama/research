@@ -1,0 +1,47 @@
+{
+  "dataset": {
+    "total_samples": 3360,
+    "train_samples": 2688,
+    "validation_samples": 336,
+    "test_samples": 336,
+    "split": "Chronological 80/10/10",
+    "train_start": "2025-01-06 08:00:00",
+    "train_end": "2025-08-17 19:00:00",
+    "validation_start": "2025-08-18 08:00:00",
+    "validation_end": "2025-09-14 19:00:00",
+    "test_start": "2025-09-15 08:00:00",
+    "test_end": "2025-10-12 19:00:00"
+  },
+  "features": [
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "is_exam_period",
+    "is_semester_break"
+  ],
+  "target": "occupancy_percent",
+  "high_occupancy_threshold": 80.0,
+  "models": {
+    "Linear Regression": {
+      "mae": 16.118,
+      "rmse": 19.929,
+      "mape_percent_zero_safe": 72.79,
+      "r2": 0.334,
+      "high_occupancy_accuracy": 0.836,
+      "high_occupancy_precision": 0.0,
+      "high_occupancy_recall": 0.0,
+      "high_occupancy_f1": 0.0
+    },
+    "Random Forest": {
+      "mae": 5.997,
+      "rmse": 6.919,
+      "mape_percent_zero_safe": 20.098,
+      "r2": 0.92,
+      "high_occupancy_accuracy": 0.943,
+      "high_occupancy_precision": 0.8,
+      "high_occupancy_recall": 0.873,
+      "high_occupancy_f1": 0.835
+    }
+  },
+  "selected_model": "Random Forest"
+}

@@ -1,0 +1,49 @@
+{
+  "dataset": {
+    "samples_after_lag_creation": 3336,
+    "train_samples": 2668,
+    "validation_samples": 334,
+    "test_samples": 334,
+    "split": "Chronological 80/10/10"
+  },
+  "base_features": [
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "is_exam_period",
+    "is_semester_break"
+  ],
+  "historical_features": [
+    "occupancy_lag_1",
+    "occupancy_lag_2",
+    "occupancy_lag_3",
+    "occupancy_lag_24"
+  ],
+  "target": "occupancy_percent",
+  "high_occupancy_threshold": 80.0,
+  "models": {
+    "Random Forest - Base": {
+      "mae": 6.001,
+      "rmse": 6.938,
+      "r2": 0.919,
+      "high_occupancy_accuracy": 0.943,
+      "high_occupancy_precision": 0.8,
+      "high_occupancy_recall": 0.873,
+      "high_occupancy_f1": 0.835
+    },
+    "Random Forest - Historical Features": {
+      "mae": 6.225,
+      "rmse": 7.405,
+      "r2": 0.907,
+      "high_occupancy_accuracy": 0.934,
+      "high_occupancy_precision": 0.77,
+      "high_occupancy_recall": 0.855,
+      "high_occupancy_f1": 0.81
+    }
+  },
+  "improvement": {
+    "mae_improvement_percent": -3.73,
+    "rmse_improvement_percent": -6.73,
+    "r2_difference": -0.012
+  }
+}
