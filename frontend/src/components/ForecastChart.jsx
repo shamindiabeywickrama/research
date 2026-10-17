@@ -34,18 +34,80 @@ export default function ForecastChart({
   onRetry,
   weatherAdjusted,
   adjustmentNote,
+  aggregation,
+  period = '24h',
+  valueMode = 'count',
+  intervalHours = 1,
 }) {
   const showAdjusted = Boolean(weatherAdjusted)
+  const isDaily = period === '7d'
+  const isPercentage = valueMode === 'percentage'
+  const displayedForecast = useMemo(() => {
+    if (!forecast?.length || isDaily || intervalHours <= 1) return forecast
+    return forecast.filter((_, index) => index % intervalHours === 0)
+  }, [forecast, intervalHours, isDaily])
 
   const chartData = useMemo(() => {
-    if (!forecast?.length) return null
+    if (!displayedForecast?.length) return null
+
+    if (isPercentage) {
+      const datasets = []
+      if (showAdjusted) {
+        datasets.push({
+          label: 'Random Forest forecast (%)',
+          data: displayedForecast.map((item) =>
+            isDaily ? item.base_average_occupancy_percentage : item.base_percentage,
+          ),
+          borderColor: '#94A3B8',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.35,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+          borderWidth: 1.5,
+          borderDash: [4, 3],
+        })
+        datasets.push({
+          label: 'Weather-adjusted estimate (%)',
+          data: displayedForecast.map((item) =>
+            isDaily ? item.average_occupancy_percentage : item.percentage,
+          ),
+          borderColor: '#2563EB',
+          backgroundColor: 'rgba(37, 99, 235, 0.08)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+        })
+      } else {
+        datasets.push({
+          label: isDaily ? 'Daily average occupancy (%)' : 'Predicted occupancy (%)',
+          data: displayedForecast.map((item) =>
+            isDaily ? item.average_occupancy_percentage : item.percentage,
+          ),
+          borderColor: '#2563EB',
+          backgroundColor: 'rgba(37, 99, 235, 0.08)',
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointHoverRadius: 5,
+          borderWidth: 2,
+        })
+      }
+
+      return {
+        labels: displayedForecast.map((item) => item.time),
+        datasets,
+      }
+    }
 
     const datasets = []
 
     if (showAdjusted) {
       datasets.push({
         label: 'ML Forecast',
-        data: forecast.map((f) => f.base_prediction ?? f.predicted_occupancy),
+        data: displayedForecast.map((f) => f.base_prediction ?? f.predicted_occupancy),
         borderColor: '#94A3B8',
         backgroundColor: 'transparent',
         fill: false,
@@ -57,7 +119,7 @@ export default function ForecastChart({
       })
       datasets.push({
         label: 'Weather-adjusted estimate',
-        data: forecast.map((f) => f.predicted_occupancy),
+        data: displayedForecast.map((f) => f.predicted_occupancy),
         borderColor: '#2563EB',
         backgroundColor: 'rgba(37, 99, 235, 0.08)',
         fill: true,
@@ -69,7 +131,7 @@ export default function ForecastChart({
     } else {
       datasets.push({
         label: 'Predicted Occupancy',
-        data: forecast.map((f) => f.predicted_occupancy),
+        data: displayedForecast.map((f) => f.predicted_occupancy),
         borderColor: '#2563EB',
         backgroundColor: 'rgba(37, 99, 235, 0.08)',
         fill: true,
@@ -82,7 +144,7 @@ export default function ForecastChart({
 
     datasets.push({
       label: 'Library Capacity',
-      data: forecast.map(() => capacity),
+      data: displayedForecast.map(() => capacity),
       borderColor: '#94A3B8',
       borderDash: [6, 4],
       pointRadius: 0,
@@ -91,10 +153,10 @@ export default function ForecastChart({
     })
 
     return {
-      labels: forecast.map((f) => f.time),
+      labels: displayedForecast.map((f) => f.time),
       datasets,
     }
-  }, [forecast, capacity, showAdjusted])
+  }, [displayedForecast, capacity, showAdjusted, isDaily, isPercentage])
 
   const options = useMemo(() => ({
     responsive: true,
@@ -121,9 +183,24 @@ export default function ForecastChart({
         padding: 12,
         boxPadding: 4,
         callbacks: {
+          title(items) {
+            const item = displayedForecast?.[items[0]?.dataIndex]
+            if (!item) return ''
+            return isDaily ? `${item.date} (local date)` : item.datetime
+          },
           label(context) {
-            const item = forecast?.[context.dataIndex]
+            const item = displayedForecast?.[context.dataIndex]
             const label = context.dataset.label
+            if (isPercentage) {
+              if (!item) return `${label}: ${context.parsed.y}%`
+              if (isDaily) {
+                return [
+                  `${label}: ${context.parsed.y}%`,
+                  `Future open hours included: ${item.hours_included}`,
+                ]
+              }
+              return `${label}: ${context.parsed.y}%`
+            }
             if (label === 'Library Capacity') {
               return `Capacity: ${context.parsed.y}`
             }
@@ -163,33 +240,45 @@ export default function ForecastChart({
       },
       y: {
         beginAtZero: true,
-        suggestedMax: capacity,
+        min: isPercentage ? 0 : undefined,
+        max: isPercentage ? 100 : undefined,
+        suggestedMax: isPercentage ? undefined : capacity,
         grid: { color: '#F1F5F9' },
         ticks: {
           font: { size: 11 },
           color: '#64748B',
+          stepSize: isPercentage ? 20 : undefined,
         },
         title: {
           display: true,
-          text: 'Number of people',
+          text: isPercentage ? 'Occupancy (%)' : 'Number of people',
           color: '#64748B',
           font: { size: 12 },
         },
       },
     },
-  }), [forecast, capacity])
+  }), [displayedForecast, capacity, isDaily, isPercentage])
+
+  const chartTitle = isPercentage
+    ? isDaily ? '7-Day Daily Average Occupancy' : 'Next 24 Hours: Hourly Occupancy'
+    : '24-Hour Library Crowd Forecast'
+  const chartSubtitle = isPercentage
+    ? isDaily
+      ? aggregation || 'Daily average of future open-hour occupancy predictions.'
+      : intervalHours > 1
+        ? `Predicted occupancy every ${intervalHours} hours.`
+        : 'Predicted occupancy for each upcoming hour.'
+    : showAdjusted
+      ? 'Base ML prediction and weather-adjusted estimate'
+      : 'Predicted occupancy for the next 24 hours'
 
   return (
     <section className="section">
       <div className="chart-section">
         <div className="section-header">
           <div>
-            <h2 className="section-title">24-Hour Library Crowd Forecast</h2>
-            <p className="section-subtitle">
-              {showAdjusted
-                ? 'Base ML prediction and weather-adjusted estimate'
-                : 'Predicted occupancy for the next 24 hours'}
-            </p>
+            <h2 className="section-title">{chartTitle}</h2>
+            <p className="section-subtitle">{chartSubtitle}</p>
           </div>
           <div className="legend-pills">
             <span className="legend-pill legend-pill--low">Low</span>

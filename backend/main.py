@@ -15,7 +15,7 @@ import os
 import json
 import asyncio
 from datetime import datetime, date, timedelta
-from typing import Optional, List
+from typing import Optional, List, Literal
 from contextlib import asynccontextmanager
 
 import joblib
@@ -249,6 +249,7 @@ def _apply_weather_to_forecast(forecast: List[dict]) -> List[dict]:
     for slot in forecast:
         base = int(slot["predicted_occupancy"])
         slot["base_prediction"] = base
+        slot["base_percentage"] = slot["percentage"]
         slot["weather"] = None
         slot["weather_adjustment"] = 0.0
         slot["weather_adjusted_prediction"] = base
@@ -354,8 +355,7 @@ def _predict_single(target_date: date, hour: int) -> dict:
         "predicted_occupancy_percent": round(pred_percent, 1),
         "predicted_occupancy_count": pred_count,
         "capacity": CAPACITY,
-        "percentage": round(pred_percent, 1),
-        "status": _occupancy_status(pred_percent),
+        "percentage": round((pred_count / CAPACITY) * 100, 1) if CAPACITY > 0 else 0.0,        "status": _occupancy_status(pred_percent),
         "is_open": True,
         "is_exam_period": bool(_in_range(target_date, EXAM_DATE_RANGES)),
         "is_semester_break": bool(_in_range(target_date, BREAK_DATE_RANGES)),
@@ -363,14 +363,11 @@ def _predict_single(target_date: date, hour: int) -> dict:
     }
 
 
-def _build_24h_forecast(from_dt: Optional[datetime] = None) -> List[dict]:
-    """Rolling 24-hour forecast starting from the current hour."""
-    now = from_dt or datetime.now()
-    start = now.replace(minute=0, second=0, microsecond=0)
+def _build_hourly_forecast(timestamps: List[datetime]) -> List[dict]:
+    """Predict each supplied server-local timestamp using the trained model."""
     forecast = []
 
-    for i in range(24):
-        slot = start + timedelta(hours=i)
+    for slot in timestamps:
         target_date = slot.date()
         hour = slot.hour
         pred = _predict_single(target_date, hour)
@@ -386,6 +383,69 @@ def _build_24h_forecast(from_dt: Optional[datetime] = None) -> List[dict]:
         })
 
     return _apply_weather_to_forecast(forecast)
+
+
+def _build_24h_forecast(from_dt: Optional[datetime] = None) -> List[dict]:
+    """Build 24 hourly predictions from the next full server-local hour."""
+    now = from_dt or datetime.now()
+    start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    timestamps = [start + timedelta(hours=i) for i in range(24)]
+    return _build_hourly_forecast(timestamps)
+
+
+def _build_next_7_days_hourly_forecast(from_dt: Optional[datetime] = None) -> List[dict]:
+    """Predict future open hours for the next seven local calendar days.
+
+    The first day includes only open hours after the current hour. If no open
+    hours remain today, the seven-day window starts tomorrow. Later days include
+    every configured open hour.
+    """
+    now = from_dt or datetime.now()
+    first_date = now.date()
+    first_hour = max(OPEN_HOUR, now.hour + 1)
+
+    if first_hour > CLOSE_HOUR:
+        first_date += timedelta(days=1)
+        first_hour = OPEN_HOUR
+
+    timestamps = []
+    for day_offset in range(7):
+        target_date = first_date + timedelta(days=day_offset)
+        start_hour = first_hour if day_offset == 0 else OPEN_HOUR
+        for hour in range(start_hour, CLOSE_HOUR + 1):
+            timestamps.append(
+                datetime(target_date.year, target_date.month, target_date.day, hour)
+            )
+
+    return _build_hourly_forecast(timestamps)
+
+
+def _summarize_daily_forecast(hourly_forecast: List[dict]) -> List[dict]:
+    """Average future open-hour percentages into one summary per local date."""
+    grouped = {}
+    for slot in hourly_forecast:
+        day = datetime.fromisoformat(slot["datetime"]).date()
+        grouped.setdefault(day, []).append(slot)
+
+    summaries = []
+    for day, slots in grouped.items():
+        average = sum(float(slot["percentage"]) for slot in slots) / len(slots)
+        base_average = sum(
+            float(slot.get("base_percentage", slot["percentage"]))
+            for slot in slots
+        ) / len(slots)
+        summaries.append({
+            "date": day.isoformat(),
+            "datetime": datetime(day.year, day.month, day.day).isoformat(),
+            "time": day.strftime("%a %b %d"),
+            "average_occupancy_percentage": round(average, 1),
+            "base_average_occupancy_percentage": round(base_average, 1),
+            "hours_included": len(slots),
+            "capacity": CAPACITY,
+            "status": _occupancy_status(average),
+        })
+
+    return summaries
 
 
 def _find_best_windows(forecast: List[dict], window_hours: int = 2, count: int = 2) -> List[dict]:
@@ -450,29 +510,43 @@ def _find_best_windows(forecast: List[dict], window_hours: int = 2, count: int =
     return selected
 
 
+
 def _compute_quick_insights(forecast: List[dict]) -> dict:
-    open_slots = [f for f in forecast if f["is_open"]]
-    if not open_slots:
+    """Calculate insights using only today's forecast slots."""
+    today = datetime.now().date()
+
+    today_slots = [
+        slot
+        for slot in forecast
+        if datetime.fromisoformat(slot["datetime"]).date() == today
+        and slot["is_open"]
+    ]
+
+    if not today_slots:
         return {
-            "today_average": 0,
-            "today_peak": 0,
+            "today_average": None,
+            "today_peak": None,
             "quietest_period": "—",
-            "available_seats": CAPACITY,
+            "available_seats": None,
         }
 
-    occupancies = [s["predicted_occupancy"] for s in open_slots]
-    avg = int(round(sum(occupancies) / len(occupancies)))
+    occupancies = [
+        slot["predicted_occupancy"] for slot in today_slots
+    ]
+
+    average = int(round(sum(occupancies) / len(occupancies)))
     peak = max(occupancies)
-    quietest = min(open_slots, key=lambda s: s["predicted_occupancy"])
-    current = open_slots[0] if open_slots else {"predicted_occupancy": 0}
+    quietest = min(
+        today_slots,
+        key=lambda slot: slot["predicted_occupancy"],
+    )
 
     return {
-        "today_average": avg,
+        "today_average": average,
         "today_peak": peak,
         "quietest_period": quietest["time"],
-        "available_seats": max(0, CAPACITY - current["predicted_occupancy"]),
+        "available_seats": max(0, CAPACITY - today_slots[0]["predicted_occupancy"]),
     }
-
 
 def _log_to_supabase(resp: dict):
     if not supabase:
@@ -685,21 +759,27 @@ def api_current_occupancy():
 
 
 @app.get("/api/library/forecast")
-def api_forecast():
-    forecast = _build_24h_forecast()
+def api_forecast(period: Literal["24h", "7d"] = "24h"):
+    if period == "7d":
+        hourly_forecast = _build_next_7_days_hourly_forecast()
+        forecast = _summarize_daily_forecast(hourly_forecast)
+    else:
+        hourly_forecast = _build_24h_forecast()
+        forecast = hourly_forecast
+
     apply_layer, source = should_apply_layer(
         FEATURES,
         bool(weather_service and weather_service.get_hourly()),
     )
-    if supabase and apply_layer:
-        current_hour = forecast[0] if forecast else None
-        if current_hour:
-            _log_weather_to_supabase(current_hour)
-    return {
+    if supabase and apply_layer and hourly_forecast:
+        _log_weather_to_supabase(hourly_forecast[0])
+
+    response = {
         "forecast": forecast,
+        "period": period,
         "data_mode": DATA_MODE,
         "generated_at": datetime.now().isoformat(),
-        "insights": _compute_quick_insights(forecast),
+        "insights": _compute_quick_insights(hourly_forecast),
         "weather_insight": _weather_insight_from_current(),
         "model_uses_weather_features": MODEL_USES_WEATHER,
         "weather_adjustment_source": source,
@@ -715,6 +795,15 @@ def api_forecast():
             )
         ),
     }
+
+    if period == "7d":
+        response["aggregation"] = (
+            "Daily average of future open-hour predicted occupancy percentages; "
+            "elapsed hours and closed hours are excluded."
+        )
+        response["hourly_forecast"] = hourly_forecast
+
+    return response
 
 
 @app.get("/api/library/recommendations")

@@ -57,12 +57,6 @@ export default function CurrentOccupancy({ data, loading, dataMode }) {
 
   return (
     <section className="section">
-      {isDemo && (
-        <div className="demo-badge">Demo Prediction Data</div>
-      )}
-      {isWifi && (
-        <div className="wifi-badge">Wi-Fi Simulation Mode</div>
-      )}
       <div className="occupancy-card">
         <div className="occupancy-card__header">
           <h2 className="section-title">Current Library Occupancy</h2>

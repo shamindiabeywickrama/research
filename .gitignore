@@ -1,0 +1,28 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Python environments and cache
+.venv/
+venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+
+# Frontend dependencies and build output
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# Local Wi-Fi observations and runtime data
+backend/data/
+
+# Temporary backups
+*.backup
+*.bak
+*_original.pkl
+*_original.json

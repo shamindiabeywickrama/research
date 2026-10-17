@@ -9,6 +9,7 @@ Designed for Windows compatibility using ping and ARP table.
 """
 
 import os
+import csv
 import subprocess
 import threading
 import time
@@ -16,7 +17,8 @@ import ipaddress
 from datetime import datetime
 from typing import Set, Dict, List, Optional
 from collections import deque
-
+from venv import logger
+from concurrent.futures import ThreadPoolExecutor
 
 class WiFiMonitor:
     """Monitor local network for connected devices."""
@@ -56,6 +58,26 @@ class WiFiMonitor:
         # WebSocket callback
         self._websocket_callback = None
 
+        # CSV logging for timestamped network observations
+        self.log_file = os.path.join(
+            os.path.dirname(__file__),
+            "data",
+            "hotspot_observations.csv",
+        )
+        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+
+        if not os.path.exists(self.log_file) or os.path.getsize(self.log_file) == 0:
+            with open(self.log_file, "w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    "timestamp",
+                    "detected_devices",
+                    "network",
+                    "source",
+                    "status",
+                ])
+
+
     def set_websocket_callback(self, callback):
         """Set callback function for WebSocket updates."""
         self._websocket_callback = callback
@@ -90,16 +112,14 @@ class WiFiMonitor:
 
             self._stop_event.wait(self.scan_interval)
 
+
     def _scan_network(self):
-        """Scan the subnet for active devices."""
+        """Scan the subnet and log each successful observation."""
         with self._lock:
             self.previous_devices = self.detected_devices.copy()
 
         try:
-            # Get active devices from ARP table and ping scan
             active_devices = self._get_active_devices()
-
-            # Remove excluded IPs
             detected = active_devices - self.exclude_ips
 
             with self._lock:
@@ -118,9 +138,11 @@ class WiFiMonitor:
 
                 should_notify = bool(new_devices or disconnected_devices)
 
-            # Call get_status() outside the lock to avoid deadlock
             if should_notify and self._websocket_callback:
                 self._websocket_callback(self.get_status())
+
+            # Log every successful scan, not only device changes.
+            self._log_observation()
 
         except Exception as e:
             with self._lock:
@@ -128,25 +150,35 @@ class WiFiMonitor:
                 self.error_message = str(e)
             raise
 
+
+    def _log_observation(self):
+        """Append one successful network observation to the CSV file."""
+        with self._lock:
+            timestamp = self.last_scan.isoformat() if self.last_scan else datetime.now().isoformat()
+            detected_count = len(self.detected_devices)
+            network = self.subnet
+            status = self.status
+
+        try:
+            with open(self.log_file, "a", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow([
+                    timestamp,
+                    detected_count,
+                    network,
+                    "phone_hotspot",
+                    status,
+                ])
+        except OSError as error:
+            print(f"[WiFi Monitor] CSV logging failed: {error}")
+
+
     def _get_active_devices(self) -> Set[str]:
-        """Get active devices using ARP table and ping."""
-        active = set()
+        """Detect active devices using ARP and ping scanning."""
+        arp_devices = self._get_arp_devices()
+        ping_devices = self._ping_scan()
+        return arp_devices | ping_devices
 
-        # Method 1: Read ARP table (Windows)
-        try:
-            arp_devices = self._get_arp_devices()
-            active.update(arp_devices)
-        except Exception as e:
-            print(f"[WiFi Monitor] ARP scan failed: {e}")
-
-        # Method 2: Ping scan (lightweight)
-        try:
-            ping_devices = self._ping_scan()
-            active.update(ping_devices)
-        except Exception as e:
-            print(f"[WiFi Monitor] Ping scan failed: {e}")
-
-        return active
 
     def _get_arp_devices(self) -> Set[str]:
         """Read Windows ARP table to get active devices."""
@@ -185,29 +217,30 @@ class WiFiMonitor:
         except Exception:
             return set()
 
+
+
     def _ping_scan(self) -> Set[str]:
-        """Lightweight ping scan of the subnet."""
+        """Scan the local network concurrently for reachable devices."""
         devices = set()
 
         try:
             network = ipaddress.ip_network(self.subnet, strict=False)
-            usable_hosts = list(network.hosts())
 
-            # Limit scan to avoid long delays
-            # For /28 subnet, max 14 hosts, so we can scan all
-            # For larger subnets, we'd need to limit this
+            hosts = [
+                str(ip)
+                for ip in network.hosts()
+                if str(ip) not in self.exclude_ips
+            ]
 
-            for ip in usable_hosts:
-                ip_str = str(ip)
-                if ip_str in self.exclude_ips:
-                    continue
+            with ThreadPoolExecutor(max_workers=32) as executor:
+                results = executor.map(self._ping_host, hosts)
 
-                # Quick ping with timeout
-                if self._ping_host(ip_str):
-                    devices.add(ip_str)
+                for ip, is_alive in zip(hosts, results):
+                    if is_alive:
+                        devices.add(ip)
 
         except Exception as e:
-            print(f"[WiFi Monitor] Ping scan error: {e}")
+            print(f"[WiFi Monitor] Network scan failed: {e}")
 
         return devices
 

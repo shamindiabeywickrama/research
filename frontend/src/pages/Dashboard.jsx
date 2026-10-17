@@ -4,34 +4,27 @@ import {
   getCurrentOccupancy,
   getForecast,
   getRecommendations,
-  getMetrics,
-  getDataSources,
   getCurrentWeather,
 } from '../api'
+
 import Header from '../components/Header'
 import CurrentOccupancy from '../components/CurrentOccupancy'
 import QuickInsights from '../components/QuickInsights'
 import ForecastChart from '../components/ForecastChart'
 import RecommendationCard from '../components/RecommendationCard'
-import CrowdTimeline from '../components/CrowdTimeline'
-import ModelPerformance from '../components/ModelPerformance'
-import DataSources from '../components/DataSources'
 import WiFiStatus from '../components/WiFiStatus'
 import NetworkActivity from '../components/NetworkActivity'
 import WeatherCard from '../components/WeatherCard'
-import WeatherImpact from '../components/WeatherImpact'
-import WeatherTimeline from '../components/WeatherTimeline'
 import Footer from '../components/Footer'
 import ErrorState from '../components/ErrorState'
 import { isWifiMode } from '../utils/weather'
+import Navigation from '../components/Navigation'
 
 export default function Dashboard() {
   const [health, setHealth] = useState(null)
   const [current, setCurrent] = useState(null)
   const [forecastData, setForecastData] = useState(null)
   const [recommendations, setRecommendations] = useState(null)
-  const [metricsData, setMetricsData] = useState(null)
-  const [dataSources, setDataSources] = useState(null)
   const [weather, setWeather] = useState(null)
   const [dataMode, setDataMode] = useState('demo')
   const [loading, setLoading] = useState(true)
@@ -39,13 +32,15 @@ export default function Dashboard() {
   const [serviceError, setServiceError] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
 
+  const capacity = current?.capacity || forecastData?.forecast?.[0]?.capacity || 200
+
   const loadData = useCallback(async () => {
     setLoading(true)
     setServiceError(null)
     setForecastError(null)
 
     try {
-      const [healthRes, currentRes, forecastRes, recsRes, metricsRes, sourcesRes] =
+      const [healthRes, currentRes, forecastRes, recsRes] =
         await Promise.all([
           getHealth().catch(() => null),
           getCurrentOccupancy().catch(() => null),
@@ -54,8 +49,6 @@ export default function Dashboard() {
             return null
           }),
           getRecommendations().catch(() => null),
-          getMetrics().catch(() => null),
-          getDataSources().catch(() => null),
         ])
 
       getCurrentWeather()
@@ -70,8 +63,6 @@ export default function Dashboard() {
       setCurrent(currentRes)
       setForecastData(forecastRes)
       setRecommendations(recsRes?.recommendations ?? null)
-      setMetricsData(metricsRes)
-      setDataSources(sourcesRes?.sources ?? null)
       setDataMode(
         currentRes?.data_mode ||
         forecastRes?.data_mode ||
@@ -100,11 +91,12 @@ export default function Dashboard() {
     }
   }, [loadData])
 
-  const capacity = current?.capacity || forecastData?.forecast?.[0]?.capacity || 200
 
   return (
     <div className="dashboard">
       <Header health={health} lastUpdated={lastUpdated} />
+
+      <Navigation />
 
       {serviceError && (
         <div className="service-banner">
@@ -140,6 +132,7 @@ export default function Dashboard() {
           />
         </div>
 
+
         {isWifiMode(dataMode) && (
           <>
             <div className="dashboard-grid__wifi">
@@ -151,12 +144,12 @@ export default function Dashboard() {
           </>
         )}
 
+
+
         <div className="dashboard-grid__weather">
           <WeatherCard weather={weather} loading={loading && !weather} />
         </div>
-        <div className="dashboard-grid__weather-impact">
-          <WeatherImpact weather={weather} />
-        </div>
+
 
         <div className="dashboard-grid__chart">
           <ForecastChart
@@ -170,10 +163,6 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="dashboard-grid__weather-timeline">
-          <WeatherTimeline forecast={forecastData?.forecast} />
-        </div>
-
         <div className="dashboard-grid__recs">
           <RecommendationCard
             recommendations={recommendations}
@@ -182,23 +171,6 @@ export default function Dashboard() {
           />
         </div>
 
-        {forecastData?.forecast?.length ? (
-          <div className="dashboard-grid__timeline">
-            <CrowdTimeline forecast={forecastData.forecast} />
-          </div>
-        ) : null}
-
-        <div className="dashboard-grid__metrics">
-          <ModelPerformance
-            metrics={metricsData?.metrics}
-            note={metricsData?.note}
-            loading={loading && !metricsData}
-          />
-        </div>
-
-        <div className="dashboard-grid__sources">
-          <DataSources sources={dataSources} />
-        </div>
       </div>
 
       <Footer />

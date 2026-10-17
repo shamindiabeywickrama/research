@@ -65,7 +65,7 @@ export default function QuickInsights({ insights, loading, currentData }) {
 
   const data = {
     ...(insights || {}),
-    available_seats: currentData?.available_seats ?? insights?.available_seats ?? 0,
+    available_seats: currentData?.available_seats ?? insights?.available_seats ?? null,
   }
 
   return (

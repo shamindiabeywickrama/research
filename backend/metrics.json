@@ -1,6 +1,12 @@
 {
-  "mae": 5.442,
-  "r2_score": 0.955,
+  "mae": 5.997,
+  "rmse": 6.919,
+  "r2_score": 0.92,
+  "mape": 20.098,
+  "accuracy": 0.943,
+  "precision": 0.8,
+  "recall": 0.873,
+  "f1_score": 0.835,
   "features": [
     "hour",
     "day_of_week",
@@ -9,6 +15,22 @@
     "is_semester_break"
   ],
   "target": "occupancy_percent",
-  "n_train": 2688,
-  "n_test": 672
+  "evaluation": {
+    "method": "chronological 80/10/10 split",
+    "train_rows": 2688,
+    "validation_rows": 336,
+    "test_rows": 336,
+    "test_period": {
+      "start": "2025-09-15 08:00",
+      "end": "2025-10-12 19:00"
+    },
+    "high_occupancy_threshold": 80
+  },
+  "deployment": {
+    "model": "RandomForestRegressor",
+    "n_estimators": 200,
+    "max_depth": 10,
+    "random_state": 42,
+    "trained_on": "complete available synthetic dataset"
+  }
 }

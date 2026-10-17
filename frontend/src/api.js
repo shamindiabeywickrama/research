@@ -18,10 +18,20 @@ export async function getCurrentOccupancy() {
   return handle(res)
 }
 
-export async function getForecast() {
-  const res = await fetch(`${API_BASE}/api/library/forecast`)
+export async function getForecast(period = '24h') {
+  const query = period === '7d' ? '?period=7d' : ''
+  const res = await fetch(`${API_BASE}/api/library/forecast${query}`)
   return handle(res)
 }
+
+
+export async function getDailyPrediction(date) {
+  const res = await fetch(
+    `${API_BASE}/predict/day?date_str=${encodeURIComponent(date)}`,
+  )
+  return handle(res)
+}
+
 
 export async function getRecommendations() {
   const res = await fetch(`${API_BASE}/api/library/recommendations`)
